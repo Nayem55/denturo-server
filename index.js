@@ -5,6 +5,8 @@ const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const fns = require('date-fns');
 const port = process.env.PORT || 5000;
+const stripe = require("stripe")(process.env.STRIPE_SECRET);
+
 
 const app = express();
 
@@ -42,6 +44,7 @@ async function run(){
       const bookingCollection = client.db('denturo').collection('booking');
       const usersCollection = client.db('denturo').collection('users');
       const doctorsCollection = client.db('denturo').collection('doctors');
+      const paymentCollection = client.db('denturo').collection('payment');
 
       const verifyAdmin = async(req,res,next)=>{
         const decodedEmail = req.decoded.email;
@@ -81,6 +84,13 @@ async function run(){
         const query = {email : email};
         const bookings = await bookingCollection.find(query).toArray();
         res.send(bookings);
+      })
+
+      app.get('/bookings/:id',async(req,res)=>{
+        const id = req.params.id;
+        const query = {_id: ObjectId(id)};
+        const booking = await bookingCollection.findOne(query);
+        res.send(booking);
       })
 
       app.post('/bookings',async(req,res)=>{
@@ -137,6 +147,34 @@ async function run(){
         res.send(result);
       })
 
+      // app.get('/addprice',async(req,res)=>{
+      //     const filter = {};
+      //     const options = { upsert : true };
+      //     const updatedDoc = {
+      //       $set: {
+      //         price: 99
+      //       }
+      //     }
+      //     const result = await appointmentCollection.updateMany(filter,updatedDoc,options);
+      //     res.send(result)
+
+      // })
+
+      app.post('/payment',async(req,res)=>{
+        const payment = req.body;
+        const result = await paymentCollection.insertOne(payment);
+        const id = payment.bookingId
+        const filter = {_id: ObjectId(id)}
+        const updatedDoc = {
+          $set: {
+            paid: true,
+            transactionId: payment.transactionId
+          }
+        }
+        const updatedResult = await bookingCollection.updateOne(filter, updatedDoc)
+        res.send(result);
+      })
+
       app.get('/jwt',async(req,res)=>{
           const email = req.query.email;
           const query = {email:email};
@@ -167,6 +205,22 @@ async function run(){
           res.send(result);
       })
 
+      app.post('/create-payment-intent',async(req,res)=>{
+        const booking= req.body;
+        const price = booking.price;
+        const amount = price*100;
+
+        const paymentIntent = await stripe.paymentIntents.create({
+          currency: "usd",
+          amount: amount,
+          "payment_method_types" : [
+            "card"
+          ],
+        });
+        res.send({
+          clientSecret: paymentIntent.client_secret,
+        });
+      })
 
 
   }
